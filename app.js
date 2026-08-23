@@ -30,8 +30,11 @@ const saveHistoryButton=document.querySelector('#saveHistoryButton');
 const historySearch=document.querySelector('#historySearch');
 const historyList=document.querySelector('#historyList');
 const historyCount=document.querySelector('#historyCount');
+const connectDriveButton=document.querySelector('#connectDriveButton');
+const uploadDriveButton=document.querySelector('#uploadDriveButton');
+const driveStatus=document.querySelector('#driveStatus');
 
-let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null;
+let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,googleTokenClient=null,googleAccessToken=null,pendingDriveUpload=false;
 const HISTORY_KEY='kotonoha_minutes_history_v1';
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
 const setStatus=(message)=>{statusText.textContent=message};
@@ -128,6 +131,24 @@ function createWordDocument(){
   return createZip([{name:'[Content_Types].xml',content:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'},{name:'_rels/.rels',content:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'},{name:'word/document.xml',content:documentXml}]);
 }
 function downloadWord(){if(!minutesText.value.trim()){minutesError.textContent='Wordに保存する議事録がありません。';minutesError.classList.remove('hidden');return}const bytes=createWordDocument();const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});const url=URL.createObjectURL(blob);const link=document.createElement('a');const title=(valueOf('meetingTitle')||'会議').replace(/[\\/:*?"<>|]/g,'_');const date=(valueOf('meetingDate')||new Date().toISOString()).slice(0,10);link.href=url;link.download=`${date}_${title}_議事録.docx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),2000);setStatus('Wordファイルを作成しました')}
+function wordFile(){const title=(valueOf('meetingTitle')||'会議').replace(/[\\/:*?"<>|]/g,'_');const date=(valueOf('meetingDate')||new Date().toISOString()).slice(0,10);return new File([createWordDocument()],`${date}_${title}_議事録.docx`,{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'})}
+function initGoogleDrive(){
+  const clientId=window.KOTONOHA_CONFIG?.googleClientId;
+  if(!clientId){driveStatus.textContent='OAuthクライアントIDを設定すると利用できます';connectDriveButton.disabled=true;uploadDriveButton.disabled=true;return}
+  if(!window.google?.accounts?.oauth2){driveStatus.textContent='Google接続機能を読み込んでいます';setTimeout(initGoogleDrive,500);return}
+  googleTokenClient=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:'https://www.googleapis.com/auth/drive.file',callback:async response=>{if(response.error){driveStatus.textContent='Google Driveへの接続に失敗しました';pendingDriveUpload=false;return}googleAccessToken=response.access_token;driveStatus.textContent='Google Driveに接続しました';connectDriveButton.textContent='再接続';if(pendingDriveUpload){pendingDriveUpload=false;await uploadWordToDrive()}}});
+  driveStatus.textContent='未接続';uploadDriveButton.disabled=false;
+}
+function connectGoogleDrive(){if(!googleTokenClient){initGoogleDrive();if(!googleTokenClient)return}googleTokenClient.requestAccessToken({prompt:googleAccessToken?'':'consent'})}
+async function uploadWordToDrive(){
+  if(!minutesText.value.trim()){minutesError.textContent='Driveへ保存する議事録がありません。';minutesError.classList.remove('hidden');return}
+  if(!googleTokenClient){initGoogleDrive();if(!googleTokenClient)return}
+  if(!googleAccessToken){pendingDriveUpload=true;connectGoogleDrive();return}
+  const file=wordFile(),boundary=`kotonoha_${Date.now()}`,metadata={name:file.name,mimeType:file.type};const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${file.type}\r\n\r\n`,file,`\r\n--${boundary}--`]);
+  uploadDriveButton.disabled=true;driveStatus.textContent='Google Driveへ保存しています';
+  try{const response=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',{method:'POST',headers:{Authorization:`Bearer ${googleAccessToken}`,'Content-Type':`multipart/related; boundary=${boundary}`},body});const result=await response.json().catch(()=>({}));if(response.status===401){googleAccessToken=null;throw new Error('接続の有効期限が切れました。再接続してください')}if(!response.ok)throw new Error(result?.error?.message||'Google Driveへの保存に失敗しました');driveStatus.textContent=`保存完了：${result.name}`;setStatus('Google Driveへの保存が完了しました')}
+  catch(error){driveStatus.textContent=error.message||'Google Driveへの保存に失敗しました'}finally{uploadDriveButton.disabled=false}
+}
 function getHistory(){try{const data=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(data)?data:[]}catch{return[]}}
 function setHistory(items){localStorage.setItem(HISTORY_KEY,JSON.stringify(items))}
 function saveToHistory(){
@@ -148,6 +169,7 @@ transcribeButton.addEventListener('click',transcribeAudio);copyButton.addEventLi
 createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
 downloadWordButton.addEventListener('click',downloadWord);
 saveHistoryButton.addEventListener('click',saveToHistory);historySearch.addEventListener('input',renderHistory);renderHistory();
+connectDriveButton.addEventListener('click',connectGoogleDrive);uploadDriveButton.addEventListener('click',uploadWordToDrive);window.addEventListener('load',initGoogleDrive);
 window.addEventListener('beforeunload',event=>{if(recorder&&recorder.state!=='inactive'){event.preventDefault();event.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&recorder?.state==='recording')keepScreenAwake()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));

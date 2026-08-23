@@ -2,6 +2,8 @@
 
 iPhoneのSafariで使えるAI議事録アプリです。Phase 5では録音、AI文字起こし、AI議事録の作成・編集、端末内の履歴・検索に加え、Microsoft Word（.docx）出力に対応しています。
 
+Phase 6ではGoogle Identity ServicesとGoogle Drive APIを利用し、作成したWordファイルをマイドライブへ直接保存できます。OAuthアクセストークンはブラウザ内のメモリだけで扱い、永続保存しません。
+
 ## iPhoneでの使い方
 
 1. 公開URLをSafariで開く

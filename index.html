@@ -20,7 +20,7 @@
     <header class="topbar">
       <div class="brand-mark" aria-hidden="true">声</div>
       <div><p class="eyebrow">AI MEETING ASSISTANT</p><h1>ことのは議事録</h1></div>
-      <span class="phase-badge">Phase 5</span>
+      <span class="phase-badge">Phase 6</span>
     </header>
 
     <section class="intro">
@@ -85,6 +85,10 @@
         <p class="minutes-error hidden" id="minutesError" role="alert"></p>
         <div class="minutes-actions"><button class="word-button" id="downloadWordButton">Word保存</button><button class="outline-button" id="downloadMinutesButton">テキスト保存</button><button class="next-button" id="saveHistoryButton">端末に保存</button></div>
         <button class="text-button" id="regenerateButton">AIでもう一度作成</button>
+        <section class="drive-box">
+          <div><p class="eyebrow">GOOGLE DRIVE</p><h4>Google Driveへ保存</h4><small id="driveStatus">Google Cloudの接続設定が必要です</small></div>
+          <div class="drive-actions"><button class="outline-button" id="connectDriveButton">Google Driveに接続</button><button class="drive-button" id="uploadDriveButton">WordをDriveへ保存</button></div>
+        </section>
       </section>
     </section>
 
@@ -102,9 +106,10 @@
       <span aria-hidden="true">◎</span>
       <div><strong>大切な音声を安全に</strong><p>「AIで文字起こし」または「AI議事録を作成」を押したときだけ、処理に必要なデータをOpenAI APIへ送信します。</p></div>
     </section>
-    <footer>ことのは議事録 · PWA Phase 5</footer>
+    <footer>ことのは議事録 · PWA Phase 6</footer>
   </main>
   <script src="config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
