@@ -1,0 +1,12 @@
+{
+  "name": "ことのは議事録",
+  "short_name": "ことのは",
+  "description": "iPhoneで会議を録音し、AI議事録を作成するPWA",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#17332e",
+  "lang": "ja",
+  "icons": [{"src":"icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

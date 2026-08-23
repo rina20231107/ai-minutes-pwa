@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#17332e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ことのは議事録">
+  <meta name="description" content="iPhoneで会議を録音し、AI議事録を作成するPWA">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="icon" href="icons/icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <title>ことのは議事録</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand-mark" aria-hidden="true">声</div>
+      <div><p class="eyebrow">AI MEETING ASSISTANT</p><h1>ことのは議事録</h1></div>
+      <span class="phase-badge">Phase 1</span>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">RECORD &amp; REMEMBER</p>
+      <h2>話したことを、<br><span>次の行動</span>に変える。</h2>
+      <p>会議や研修を録音して、AIが読みやすい議事録にまとめます。</p>
+    </section>
+
+    <section class="recorder-card" id="recorderCard">
+      <div class="status-row" role="status" aria-live="polite">
+        <span class="status-dot"></span><span id="statusText">録音するか、音声ファイルを選択してください</span>
+      </div>
+      <div class="timer" id="timer">00:00</div>
+      <div class="wave" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+
+      <div class="controls" id="idleControls">
+        <button class="record-button" id="recordButton"><span>●</span> 録音を開始</button>
+      </div>
+      <div class="controls hidden" id="activeControls">
+        <button class="secondary-button" id="pauseButton">一時停止</button>
+        <button class="stop-button" id="stopButton">録音を終了</button>
+      </div>
+
+      <label class="file-picker" id="filePicker">
+        <strong>音声ファイルを選択</strong>
+        <small>ボイスメモや「ファイル」から選べます</small>
+        <input id="audioFile" type="file" accept="audio/*">
+      </label>
+
+      <section class="audio-preview hidden" id="audioPreview">
+        <div><strong id="audioName">録音データ</strong><small>文字起こしの準備ができました</small></div>
+        <audio id="audioPlayer" controls></audio>
+        <div class="preview-actions">
+          <button class="outline-button" id="shareButton">共有・保存</button>
+          <button class="ai-button" disabled>AIで文字起こし <small>Phase 2</small></button>
+        </div>
+      </section>
+    </section>
+
+    <section class="install-card">
+      <span aria-hidden="true">＋</span>
+      <div><strong>iPhoneのホーム画面に追加</strong><p>Safariの共有ボタンから「ホーム画面に追加」を選ぶと、アプリのように起動できます。</p></div>
+    </section>
+    <section class="privacy-note">
+      <span aria-hidden="true">◎</span>
+      <div><strong>大切な音声を安全に</strong><p>Phase 1では録音を外部へ送信しません。録音終了後に端末へ保存できます。</p></div>
+    </section>
+    <footer>ことのは議事録 · PWA Phase 1</footer>
+  </main>
+  <script src="app.js" defer></script>
+</body>
+</html>
