@@ -11,6 +11,12 @@ const audioPreview=document.querySelector('#audioPreview');
 const audioPlayer=document.querySelector('#audioPlayer');
 const audioName=document.querySelector('#audioName');
 const shareButton=document.querySelector('#shareButton');
+const transcribeButton=document.querySelector('#transcribeButton');
+const transcriptPanel=document.querySelector('#transcriptPanel');
+const transcriptText=document.querySelector('#transcriptText');
+const processingBox=document.querySelector('#processingBox');
+const copyButton=document.querySelector('#copyButton');
+const downloadTextButton=document.querySelector('#downloadTextButton');
 
 let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null;
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
@@ -57,7 +63,22 @@ async function shareAudio(){
   try{if(navigator.canShare?.({files:[file]})){await navigator.share({title:'ことのは議事録の録音',files:[file]});return}}catch(error){if(error?.name==='AbortError')return}
   const link=document.createElement('a');link.href=currentUrl;link.download=name;link.click();setStatus('録音ファイルを保存しました');
 }
+async function transcribeAudio(){
+  if(!currentBlob)return;
+  const endpoint=window.KOTONOHA_CONFIG?.transcribeApiUrl;
+  transcriptPanel.classList.remove('hidden');transcriptPanel.scrollIntoView({behavior:'smooth',block:'start'});
+  if(!endpoint){setStatus('文字起こしサーバーを準備中です。公開設定が完了するまでお待ちください。');return}
+  const form=new FormData();const name=audioName.textContent||'recording.m4a';
+  form.append('file',new File([currentBlob],name,{type:currentBlob.type||'audio/mp4'}));form.append('language','ja');
+  transcribeButton.disabled=true;processingBox.classList.remove('hidden');transcriptText.value='';setStatus('AIで文字起こししています');
+  try{const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'文字起こしに失敗しました');transcriptText.value=data.text||'';setStatus('文字起こしが完了しました')}
+  catch(error){transcriptText.value='';setStatus(error.message||'文字起こしに失敗しました。時間をおいて再度お試しください。')}
+  finally{processingBox.classList.add('hidden');transcribeButton.disabled=false}
+}
+async function copyTranscript(){if(!transcriptText.value)return;await navigator.clipboard.writeText(transcriptText.value);copyButton.textContent='コピー済み';setTimeout(()=>copyButton.textContent='コピー',1500)}
+function downloadTranscript(){if(!transcriptText.value)return;const blob=new Blob([transcriptText.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`文字起こし_${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
+transcribeButton.addEventListener('click',transcribeAudio);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
 window.addEventListener('beforeunload',event=>{if(recorder&&recorder.state!=='inactive'){event.preventDefault();event.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&recorder?.state==='recording')keepScreenAwake()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
