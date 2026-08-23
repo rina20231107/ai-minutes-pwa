@@ -20,7 +20,7 @@
     <header class="topbar">
       <div class="brand-mark" aria-hidden="true">声</div>
       <div><p class="eyebrow">AI MEETING ASSISTANT</p><h1>ことのは議事録</h1></div>
-      <span class="phase-badge">Phase 3</span>
+      <span class="phase-badge">Phase 4</span>
     </header>
 
     <section class="intro">
@@ -83,8 +83,15 @@
         </div>
         <textarea id="minutesText" aria-label="AI議事録" placeholder="作成した議事録がここに表示されます。内容は自由に編集できます。"></textarea>
         <p class="minutes-error hidden" id="minutesError" role="alert"></p>
-        <div class="transcript-actions"><button class="outline-button" id="downloadMinutesButton">議事録を保存</button><button class="next-button regenerate" id="regenerateButton">もう一度作成</button></div>
+        <div class="transcript-actions"><button class="outline-button" id="downloadMinutesButton">ファイル保存</button><button class="next-button" id="saveHistoryButton">端末に保存</button></div>
+        <button class="text-button" id="regenerateButton">AIでもう一度作成</button>
       </section>
+    </section>
+
+    <section class="history-card" id="historyCard">
+      <div class="history-heading"><div><p class="eyebrow">HISTORY</p><h2>過去の議事録</h2></div><span id="historyCount">0件</span></div>
+      <label class="history-search"><span>検索</span><input id="historySearch" type="search" placeholder="会議名・出席者・本文から検索"></label>
+      <div class="history-list" id="historyList"><p class="empty-history">保存した議事録はまだありません。</p></div>
     </section>
 
     <section class="install-card">
@@ -95,7 +102,7 @@
       <span aria-hidden="true">◎</span>
       <div><strong>大切な音声を安全に</strong><p>「AIで文字起こし」または「AI議事録を作成」を押したときだけ、処理に必要なデータをOpenAI APIへ送信します。</p></div>
     </section>
-    <footer>ことのは議事録 · PWA Phase 3</footer>
+    <footer>ことのは議事録 · PWA Phase 4</footer>
   </main>
   <script src="config.js"></script>
   <script src="app.js" defer></script>

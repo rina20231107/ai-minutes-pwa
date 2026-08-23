@@ -25,8 +25,13 @@ const minutesError=document.querySelector('#minutesError');
 const copyMinutesButton=document.querySelector('#copyMinutesButton');
 const downloadMinutesButton=document.querySelector('#downloadMinutesButton');
 const regenerateButton=document.querySelector('#regenerateButton');
+const saveHistoryButton=document.querySelector('#saveHistoryButton');
+const historySearch=document.querySelector('#historySearch');
+const historyList=document.querySelector('#historyList');
+const historyCount=document.querySelector('#historyCount');
 
-let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null;
+let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null;
+const HISTORY_KEY='kotonoha_minutes_history_v1';
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
 const setStatus=(message)=>{statusText.textContent=message};
 
@@ -105,9 +110,25 @@ async function createMinutes(){
 }
 async function copyMinutes(){if(!minutesText.value)return;await navigator.clipboard.writeText(minutesText.value);copyMinutesButton.textContent='コピー済み';setTimeout(()=>copyMinutesButton.textContent='コピー',1500)}
 function downloadMinutes(){if(!minutesText.value)return;const blob=new Blob([minutesText.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`議事録_${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function getHistory(){try{const data=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(data)?data:[]}catch{return[]}}
+function setHistory(items){localStorage.setItem(HISTORY_KEY,JSON.stringify(items))}
+function saveToHistory(){
+  if(!minutesText.value.trim()){minutesError.textContent='保存する議事録がありません。';minutesError.classList.remove('hidden');return}
+  const items=getHistory();const now=new Date().toISOString();const item={id:activeHistoryId||crypto.randomUUID?.()||String(Date.now()),title:valueOf('meetingTitle')||'名称未設定の会議',date:valueOf('meetingDate'),place:valueOf('meetingPlace'),attendees:valueOf('meetingAttendees'),transcript:transcriptText.value,minutes:minutesText.value,duration:timer.textContent,createdAt:now,updatedAt:now};
+  const index=items.findIndex(saved=>saved.id===item.id);if(index>=0){item.createdAt=items[index].createdAt;items[index]=item}else items.unshift(item);
+  setHistory(items);activeHistoryId=item.id;saveHistoryButton.textContent='保存しました';setTimeout(()=>saveHistoryButton.textContent='端末に保存',1500);setStatus('議事録をこの端末に保存しました');renderHistory();
+}
+function renderHistory(){
+  const query=historySearch.value.trim().toLowerCase();const all=getHistory();const items=all.filter(item=>`${item.title} ${item.attendees} ${item.minutes} ${item.transcript}`.toLowerCase().includes(query));historyCount.textContent=`${all.length}件`;historyList.replaceChildren();
+  if(!items.length){const empty=document.createElement('p');empty.className='empty-history';empty.textContent=query?'検索に一致する議事録はありません。':'保存した議事録はまだありません。';historyList.append(empty);return}
+  items.forEach(item=>{const article=document.createElement('article');article.className='history-item';const title=document.createElement('h3');title.textContent=item.title||'名称未設定の会議';const detail=document.createElement('p');detail.textContent=`${item.date?item.date.replace('T',' '):new Date(item.createdAt).toLocaleString('ja-JP')} · 録音 ${item.duration||'--:--'}`;const actions=document.createElement('div');actions.className='history-actions';const open=document.createElement('button');open.className='open-history';open.textContent='開く';open.addEventListener('click',()=>openHistory(item.id));const remove=document.createElement('button');remove.className='delete-history';remove.textContent='削除';remove.addEventListener('click',()=>deleteHistory(item.id));actions.append(open,remove);article.append(title,detail,actions);historyList.append(article)});
+}
+function openHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item)return;activeHistoryId=id;document.querySelector('#meetingTitle').value=item.title||'';document.querySelector('#meetingDate').value=item.date||'';document.querySelector('#meetingPlace').value=item.place||'';document.querySelector('#meetingAttendees').value=item.attendees||'';transcriptText.value=item.transcript||'';minutesText.value=item.minutes||'';transcriptPanel.classList.remove('hidden');minutesPanel.classList.remove('hidden');minutesPanel.scrollIntoView({behavior:'smooth',block:'start'});setStatus('保存済みの議事録を開きました')}
+function deleteHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item||!confirm(`「${item.title}」を端末から削除しますか？`))return;setHistory(getHistory().filter(saved=>saved.id!==id));if(activeHistoryId===id)activeHistoryId=null;renderHistory();setStatus('議事録を端末から削除しました')}
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
 transcribeButton.addEventListener('click',transcribeAudio);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
 createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
+saveHistoryButton.addEventListener('click',saveToHistory);historySearch.addEventListener('input',renderHistory);renderHistory();
 window.addEventListener('beforeunload',event=>{if(recorder&&recorder.state!=='inactive'){event.preventDefault();event.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&recorder?.state==='recording')keepScreenAwake()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
