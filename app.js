@@ -24,6 +24,7 @@ const minutesText=document.querySelector('#minutesText');
 const minutesError=document.querySelector('#minutesError');
 const copyMinutesButton=document.querySelector('#copyMinutesButton');
 const downloadMinutesButton=document.querySelector('#downloadMinutesButton');
+const downloadWordButton=document.querySelector('#downloadWordButton');
 const regenerateButton=document.querySelector('#regenerateButton');
 const saveHistoryButton=document.querySelector('#saveHistoryButton');
 const historySearch=document.querySelector('#historySearch');
@@ -110,6 +111,23 @@ async function createMinutes(){
 }
 async function copyMinutes(){if(!minutesText.value)return;await navigator.clipboard.writeText(minutesText.value);copyMinutesButton.textContent='コピー済み';setTimeout(()=>copyMinutesButton.textContent='コピー',1500)}
 function downloadMinutes(){if(!minutesText.value)return;const blob=new Blob([minutesText.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`議事録_${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+const xmlEscape=value=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[char]));
+const crcTable=(()=>{const table=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;table[n]=c>>>0}return table})();
+function crc32(bytes){let crc=0xffffffff;for(const byte of bytes)crc=crcTable[(crc^byte)&255]^(crc>>>8);return(crc^0xffffffff)>>>0}
+function zipU16(value){return new Uint8Array([value&255,(value>>>8)&255])}
+function zipU32(value){return new Uint8Array([value&255,(value>>>8)&255,(value>>>16)&255,(value>>>24)&255])}
+function joinBytes(parts){const size=parts.reduce((sum,part)=>sum+part.length,0);const output=new Uint8Array(size);let offset=0;for(const part of parts){output.set(part,offset);offset+=part.length}return output}
+function createZip(files){
+  const encoder=new TextEncoder(),locals=[],centrals=[];let offset=0;const now=new Date();const dosTime=((now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1))&0xffff;const dosDate=(((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate())&0xffff;
+  for(const file of files){const name=encoder.encode(file.name),data=encoder.encode(file.content),crc=crc32(data);const local=joinBytes([zipU32(0x04034b50),zipU16(20),zipU16(0x0800),zipU16(0),zipU16(dosTime),zipU16(dosDate),zipU32(crc),zipU32(data.length),zipU32(data.length),zipU16(name.length),zipU16(0),name,data]);locals.push(local);centrals.push(joinBytes([zipU32(0x02014b50),zipU16(20),zipU16(20),zipU16(0x0800),zipU16(0),zipU16(dosTime),zipU16(dosDate),zipU32(crc),zipU32(data.length),zipU32(data.length),zipU16(name.length),zipU16(0),zipU16(0),zipU16(0),zipU16(0),zipU32(0),zipU32(offset),name]));offset+=local.length}
+  const central=joinBytes(centrals);return joinBytes([...locals,central,zipU32(0x06054b50),zipU16(0),zipU16(0),zipU16(files.length),zipU16(files.length),zipU32(central.length),zipU32(offset),zipU16(0)])
+}
+function createWordDocument(){
+  const paragraphs=minutesText.value.split(/\r?\n/).map(line=>{const heading=line.startsWith('# '),subheading=line.startsWith('## ');const text=line.replace(/^#{1,2}\s+/,'');const bold=heading||subheading?'<w:b/>':'';const size=heading?'32':subheading?'26':'22';return `<w:p><w:pPr>${heading?'<w:jc w:val="center"/>':''}<w:spacing w:after="120"/></w:pPr><w:r><w:rPr>${bold}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/><w:rFonts w:ascii="Yu Mincho" w:eastAsia="游明朝"/></w:rPr><w:t xml:space="preserve">${xmlEscape(text||' ')}</w:t></w:r></w:p>`}).join('');
+  const documentXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`;
+  return createZip([{name:'[Content_Types].xml',content:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'},{name:'_rels/.rels',content:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'},{name:'word/document.xml',content:documentXml}]);
+}
+function downloadWord(){if(!minutesText.value.trim()){minutesError.textContent='Wordに保存する議事録がありません。';minutesError.classList.remove('hidden');return}const bytes=createWordDocument();const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});const url=URL.createObjectURL(blob);const link=document.createElement('a');const title=(valueOf('meetingTitle')||'会議').replace(/[\\/:*?"<>|]/g,'_');const date=(valueOf('meetingDate')||new Date().toISOString()).slice(0,10);link.href=url;link.download=`${date}_${title}_議事録.docx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),2000);setStatus('Wordファイルを作成しました')}
 function getHistory(){try{const data=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(data)?data:[]}catch{return[]}}
 function setHistory(items){localStorage.setItem(HISTORY_KEY,JSON.stringify(items))}
 function saveToHistory(){
@@ -128,6 +146,7 @@ function deleteHistory(id){const item=getHistory().find(saved=>saved.id===id);if
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
 transcribeButton.addEventListener('click',transcribeAudio);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
 createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
+downloadWordButton.addEventListener('click',downloadWord);
 saveHistoryButton.addEventListener('click',saveToHistory);historySearch.addEventListener('input',renderHistory);renderHistory();
 window.addEventListener('beforeunload',event=>{if(recorder&&recorder.state!=='inactive'){event.preventDefault();event.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&recorder?.state==='recording')keepScreenAwake()});
