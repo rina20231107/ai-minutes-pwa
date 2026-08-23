@@ -20,7 +20,7 @@
     <header class="topbar">
       <div class="brand-mark" aria-hidden="true">声</div>
       <div><p class="eyebrow">AI MEETING ASSISTANT</p><h1>ことのは議事録</h1></div>
-      <span class="phase-badge">Phase 2</span>
+      <span class="phase-badge">Phase 3</span>
     </header>
 
     <section class="intro">
@@ -67,7 +67,23 @@
         </div>
         <div class="processing hidden" id="processingBox"><span></span><div><strong>AIが音声を聞いています</strong><small>長い録音は数分かかる場合があります</small></div></div>
         <textarea id="transcriptText" aria-label="文字起こし結果" placeholder="文字起こし結果がここに表示されます"></textarea>
-        <div class="transcript-actions"><button class="outline-button" id="downloadTextButton">テキスト保存</button><button class="next-button" disabled>議事録を作成 <small>Phase 3</small></button></div>
+        <div class="transcript-actions"><button class="outline-button" id="downloadTextButton">テキスト保存</button><button class="next-button" id="createMinutesButton">AI議事録を作成</button></div>
+      </section>
+      <section class="minutes-panel hidden" id="minutesPanel">
+        <div class="transcript-heading">
+          <div><p class="eyebrow">AI MINUTES</p><h3>議事録</h3></div>
+          <button class="copy-button" id="copyMinutesButton">コピー</button>
+        </div>
+        <div class="processing hidden" id="minutesProcessing"><span></span><div><strong>AIが議事録を整理しています</strong><small>内容を確認してから保存してください</small></div></div>
+        <div class="meeting-meta">
+          <label>会議名<input id="meetingTitle" placeholder="例：8月定例会議"></label>
+          <label>日時<input id="meetingDate" type="datetime-local"></label>
+          <label>場所<input id="meetingPlace" placeholder="例：第1会議室 / Zoom"></label>
+          <label>出席者<input id="meetingAttendees" placeholder="例：田中、佐藤、鈴木"></label>
+        </div>
+        <textarea id="minutesText" aria-label="AI議事録" placeholder="作成した議事録がここに表示されます。内容は自由に編集できます。"></textarea>
+        <p class="minutes-error hidden" id="minutesError" role="alert"></p>
+        <div class="transcript-actions"><button class="outline-button" id="downloadMinutesButton">議事録を保存</button><button class="next-button regenerate" id="regenerateButton">もう一度作成</button></div>
       </section>
     </section>
 
@@ -77,9 +93,9 @@
     </section>
     <section class="privacy-note">
       <span aria-hidden="true">◎</span>
-      <div><strong>大切な音声を安全に</strong><p>Phase 1では録音を外部へ送信しません。録音終了後に端末へ保存できます。</p></div>
+      <div><strong>大切な音声を安全に</strong><p>「AIで文字起こし」または「AI議事録を作成」を押したときだけ、処理に必要なデータをOpenAI APIへ送信します。</p></div>
     </section>
-    <footer>ことのは議事録 · PWA Phase 2</footer>
+    <footer>ことのは議事録 · PWA Phase 3</footer>
   </main>
   <script src="config.js"></script>
   <script src="app.js" defer></script>

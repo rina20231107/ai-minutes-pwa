@@ -17,6 +17,14 @@ const transcriptText=document.querySelector('#transcriptText');
 const processingBox=document.querySelector('#processingBox');
 const copyButton=document.querySelector('#copyButton');
 const downloadTextButton=document.querySelector('#downloadTextButton');
+const createMinutesButton=document.querySelector('#createMinutesButton');
+const minutesPanel=document.querySelector('#minutesPanel');
+const minutesProcessing=document.querySelector('#minutesProcessing');
+const minutesText=document.querySelector('#minutesText');
+const minutesError=document.querySelector('#minutesError');
+const copyMinutesButton=document.querySelector('#copyMinutesButton');
+const downloadMinutesButton=document.querySelector('#downloadMinutesButton');
+const regenerateButton=document.querySelector('#regenerateButton');
 
 let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null;
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
@@ -77,8 +85,29 @@ async function transcribeAudio(){
 }
 async function copyTranscript(){if(!transcriptText.value)return;await navigator.clipboard.writeText(transcriptText.value);copyButton.textContent='コピー済み';setTimeout(()=>copyButton.textContent='コピー',1500)}
 function downloadTranscript(){if(!transcriptText.value)return;const blob=new Blob([transcriptText.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`文字起こし_${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+const valueOf=id=>document.querySelector(`#${id}`).value.trim();
+function formatMinutes(data){
+  const list=(items,empty='なし')=>Array.isArray(items)&&items.length?items.map(item=>`- ${item}`).join('\n'):`- ${empty}`;
+  const todos=Array.isArray(data.todos)&&data.todos.length?data.todos.map(item=>`- ${item.task}（担当：${item.assignee||'不明'}／期限：${item.deadline||'不明'}）`).join('\n'):'- なし';
+  return `# ${data.meeting_title||'会議議事録'}\n\n日時：${data.date_time||'不明'}\n場所：${data.place||'不明'}\n出席者：${(data.attendees||[]).join('、')||'不明'}\n\n## 要約\n${data.summary||'不明'}\n\n## 議題\n${list(data.agenda,'不明')}\n\n## 主な内容\n${list(data.discussion,'不明')}\n\n## 決定事項\n${list(data.decisions)}\n\n## 課題・懸念事項\n${list(data.issues)}\n\n## ToDo\n${todos}\n\n## 重要事項\n${list(data.important_notes)}`;
+}
+async function createMinutes(){
+  const transcript=transcriptText.value.trim();const endpoint=window.KOTONOHA_CONFIG?.minutesApiUrl;
+  minutesPanel.classList.remove('hidden');minutesPanel.scrollIntoView({behavior:'smooth',block:'start'});minutesError.classList.add('hidden');
+  if(!transcript){minutesError.textContent='文字起こし結果を入力してください。';minutesError.classList.remove('hidden');return}
+  if(!endpoint){minutesError.textContent='議事録作成サーバーが設定されていません。';minutesError.classList.remove('hidden');return}
+  createMinutesButton.disabled=true;regenerateButton.disabled=true;minutesProcessing.classList.remove('hidden');setStatus('AIで議事録を作成しています');
+  try{
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,metadata:{meeting_title:valueOf('meetingTitle'),date_time:valueOf('meetingDate'),place:valueOf('meetingPlace'),attendees:valueOf('meetingAttendees')}})});
+    const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'議事録の作成に失敗しました');minutesText.value=formatMinutes(data.minutes||data);setStatus('AI議事録が完成しました。内容をご確認ください。');
+  }catch(error){minutesError.textContent=error.message||'議事録の作成に失敗しました。';minutesError.classList.remove('hidden');setStatus('議事録を作成できませんでした');}
+  finally{minutesProcessing.classList.add('hidden');createMinutesButton.disabled=false;regenerateButton.disabled=false}
+}
+async function copyMinutes(){if(!minutesText.value)return;await navigator.clipboard.writeText(minutesText.value);copyMinutesButton.textContent='コピー済み';setTimeout(()=>copyMinutesButton.textContent='コピー',1500)}
+function downloadMinutes(){if(!minutesText.value)return;const blob=new Blob([minutesText.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`議事録_${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
 transcribeButton.addEventListener('click',transcribeAudio);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
+createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
 window.addEventListener('beforeunload',event=>{if(recorder&&recorder.state!=='inactive'){event.preventDefault();event.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&recorder?.state==='recording')keepScreenAwake()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
