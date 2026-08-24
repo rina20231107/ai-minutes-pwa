@@ -57,7 +57,7 @@
         <audio id="audioPlayer" controls></audio>
         <div class="preview-actions">
           <button class="outline-button" id="shareButton">共有・保存</button>
-          <button class="ai-button" id="transcribeButton">AIで文字起こし</button>
+          <button class="ai-button" id="transcribeButton">文字起こし結果を確認</button>
         </div>
       </section>
       <section class="transcript-panel hidden" id="transcriptPanel">
@@ -65,8 +65,8 @@
           <div><p class="eyebrow">TRANSCRIPT</p><h3>文字起こし結果</h3></div>
           <button class="copy-button" id="copyButton">コピー</button>
         </div>
-        <div class="processing hidden" id="processingBox"><span></span><div><strong>AIが音声を聞いています</strong><small>長い録音は数分かかる場合があります</small></div></div>
-        <textarea id="transcriptText" aria-label="文字起こし結果" placeholder="文字起こし結果がここに表示されます"></textarea>
+        <div class="processing hidden" id="processingBox"><span></span><div><strong>iPhoneが音声を認識しています</strong><small>録音と同時に文字起こししています</small></div></div>
+        <textarea id="transcriptText" aria-label="文字起こし結果" placeholder="録音中の文字起こし結果がここに表示されます。内容は修正できます。"></textarea>
         <div class="transcript-actions"><button class="outline-button" id="downloadTextButton">テキスト保存</button><button class="next-button" id="createMinutesButton">AI議事録を作成</button></div>
       </section>
       <section class="minutes-panel hidden" id="minutesPanel">
@@ -100,7 +100,7 @@
     </section>
     <section class="privacy-note">
       <span aria-hidden="true">◎</span>
-      <div><strong>大切な音声を安全に</strong><p>「AIで文字起こし」または「AI議事録を作成」を押したときだけ、処理に必要なデータをOpenAI APIへ送信します。</p></div>
+      <div><strong>大切な音声を安全に</strong><p>文字起こしにはiPhoneの音声認識を使います。OpenAI APIへ文章を送信するのは「AI議事録を作成」を押したときだけです。</p></div>
     </section>
     <footer>ことのは議事録 · PWA Phase 6</footer>
   </main>
