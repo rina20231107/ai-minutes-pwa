@@ -16,6 +16,18 @@
   <title>ことのは議事録</title>
 </head>
 <body>
+  <section class="mic-check-overlay" id="micCheckOverlay" role="dialog" aria-modal="true" aria-labelledby="micCheckTitle">
+    <div class="mic-check-card">
+      <p class="eyebrow">MICROPHONE CHECK</p>
+      <h2 id="micCheckTitle">録音に使うマイクを確認</h2>
+      <div class="mic-device-icon" aria-hidden="true">●</div>
+      <p id="micCheckMessage">PowerConfを使用する場合は、先にiPhoneのBluetooth設定で接続してから確認してください。</p>
+      <strong class="mic-detected-name hidden" id="micDetectedName"></strong>
+      <button class="next-button mic-check-primary" id="micCheckButton">マイクを確認する</button>
+      <button class="outline-button mic-check-secondary hidden" id="useInternalMicButton">内蔵マイクを使用する</button>
+      <small>Safariが報告する機器名を表示します。iOSの制約により、実際の入力先を完全には保証できません。</small>
+    </div>
+  </section>
   <main class="app-shell">
     <header class="topbar">
       <div class="brand-mark" aria-hidden="true">声</div>
@@ -33,6 +45,7 @@
       <div class="status-row" role="status" aria-live="polite">
         <span class="status-dot"></span><span id="statusText">録音するか、音声ファイルを選択してください</span>
       </div>
+      <div class="input-device" id="inputDevice"><span></span><div><small>入力マイク</small><strong id="inputDeviceName">録音開始時に確認します</strong></div></div>
       <div class="timer" id="timer">00:00</div>
       <div class="wave" aria-hidden="true">
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>

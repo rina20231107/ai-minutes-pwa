@@ -37,12 +37,40 @@ const saveHistoryButton=document.querySelector('#saveHistoryButton');
 const historySearch=document.querySelector('#historySearch');
 const historyList=document.querySelector('#historyList');
 const historyCount=document.querySelector('#historyCount');
+const micCheckOverlay=document.querySelector('#micCheckOverlay');
+const micCheckTitle=document.querySelector('#micCheckTitle');
+const micCheckMessage=document.querySelector('#micCheckMessage');
+const micDetectedName=document.querySelector('#micDetectedName');
+const micCheckButton=document.querySelector('#micCheckButton');
+const useInternalMicButton=document.querySelector('#useInternalMicButton');
+const inputDevice=document.querySelector('#inputDevice');
+const inputDeviceName=document.querySelector('#inputDeviceName');
 
 let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false,referenceDocuments=[];
 const HISTORY_KEY='kotonoha_minutes_history_v1';
 const MAX_REFERENCE_FILES=3,MAX_REFERENCE_FILE_SIZE=10*1024*1024,MAX_REFERENCE_TEXT=60000;
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
 const setStatus=(message)=>{statusText.textContent=message};
+const bluetoothNamePattern=/powerconf|anker|bluetooth|airpods|headset|hands[- ]?free|イヤホン|ヘッドセット/i;
+const internalNamePattern=/iphone|ipad|built[- ]?in|内蔵|default/i;
+
+function reportedMicName(track,devices=[]){const settings=track?.getSettings?.()||{};const match=devices.find(device=>device.kind==='audioinput'&&device.deviceId===settings.deviceId);return (match?.label||track?.label||'').trim()}
+function closeMicCheck(message){micCheckOverlay.classList.add('hidden');document.body.classList.remove('mic-check-open');if(message)setStatus(message)}
+function showMicResult(name,type){
+  micDetectedName.classList.remove('hidden');micDetectedName.textContent=name||'機器名を取得できませんでした';useInternalMicButton.classList.add('hidden');
+  if(type==='bluetooth'){micCheckTitle.textContent='Bluetoothマイクを確認しました';micCheckMessage.textContent='Bluetoothマイクを使用して録音します。';micCheckButton.textContent='録音画面へ進む';micCheckButton.dataset.action='continue';inputDevice.classList.add('is-bluetooth');inputDeviceName.textContent=name;return}
+  if(type==='internal'){micCheckTitle.textContent='iPhoneの内蔵マイクが選択されています';micCheckMessage.textContent='PowerConfを使用する場合は、先にBluetooth設定で接続してください。接続後、この画面で再確認できます。';micCheckButton.textContent='接続後に再確認';micCheckButton.dataset.action='check';useInternalMicButton.textContent='内蔵マイクを使用する';useInternalMicButton.classList.remove('hidden');inputDevice.classList.remove('is-bluetooth');inputDeviceName.textContent=name;return}
+  micCheckTitle.textContent='使用中のマイクを判定できませんでした';micCheckMessage.textContent='Bluetooth接続を確認するか、短いテスト録音で入力先を確認してください。';micCheckButton.textContent='再確認';micCheckButton.dataset.action='check';useInternalMicButton.textContent='このまま進む';useInternalMicButton.classList.remove('hidden');inputDevice.classList.remove('is-bluetooth');inputDeviceName.textContent='Safariでは判定できません';
+}
+async function checkInputMicrophone(){
+  if(micCheckButton.dataset.action==='continue'){closeMicCheck('Bluetoothマイクを使用する準備ができました');return}
+  if(!navigator.mediaDevices?.getUserMedia){showMicResult('', 'unknown');return}
+  micCheckButton.disabled=true;micCheckButton.textContent='確認しています…';micDetectedName.classList.add('hidden');useInternalMicButton.classList.add('hidden');
+  let testStream;
+  try{testStream=await navigator.mediaDevices.getUserMedia({audio:true});const track=testStream.getAudioTracks()[0];const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]);const name=reportedMicName(track,devices);const type=bluetoothNamePattern.test(name)?'bluetooth':internalNamePattern.test(name)?'internal':'unknown';showMicResult(name,type)}
+  catch(error){micCheckTitle.textContent='マイクを確認できませんでした';micCheckMessage.textContent=error?.name==='NotAllowedError'?'Safariのサイト設定でマイクを許可してから再確認してください。':'Bluetooth接続とSafariのマイク設定を確認してください。';micCheckButton.textContent='再確認';micCheckButton.dataset.action='check'}
+  finally{testStream?.getTracks().forEach(track=>track.stop());micCheckButton.disabled=false}
+}
 
 async function keepScreenAwake(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen')}catch{}}
 function releaseWakeLock(){wakeLock?.release().catch(()=>{});wakeLock=null}
@@ -68,6 +96,7 @@ async function startRecording(){
   if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){setStatus('このブラウザでは録音できません。最新版のSafariで開いてください。');return}
   try{
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+    const activeTrack=stream.getAudioTracks()[0];const activeDevices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]);const activeName=reportedMicName(activeTrack,activeDevices);inputDeviceName.textContent=activeName||'iPhoneが選択した音声入力';inputDevice.classList.toggle('is-bluetooth',bluetoothNamePattern.test(activeName));
     const preferred=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(type=>MediaRecorder.isTypeSupported(type));
     recorder=new MediaRecorder(stream,preferred?{mimeType:preferred}:undefined);
     chunks=[];elapsed=0;timer.textContent='00:00';isPaused=false;
@@ -198,6 +227,7 @@ function renderHistory(){
 function openHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item)return;activeHistoryId=id;document.querySelector('#meetingTitle').value=item.title||'';document.querySelector('#meetingDate').value=item.date||'';document.querySelector('#meetingPlace').value=item.place||'';document.querySelector('#meetingAttendees').value=item.attendees||'';transcriptText.value=item.transcript||'';minutesText.value=item.minutes||'';transcriptPanel.classList.remove('hidden');minutesPanel.classList.remove('hidden');minutesPanel.scrollIntoView({behavior:'smooth',block:'start'});setStatus('保存済みの議事録を開きました')}
 function deleteHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item||!confirm(`「${item.title}」を端末から削除しますか？`))return;setHistory(getHistory().filter(saved=>saved.id!==id));if(activeHistoryId===id)activeHistoryId=null;renderHistory();setStatus('議事録を端末から削除しました')}
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
+micCheckButton.addEventListener('click',checkInputMicrophone);useInternalMicButton.addEventListener('click',()=>closeMicCheck('内蔵マイクを使用します'));
 transcribeButton.addEventListener('click',showTranscript);apiTranscribeButton.addEventListener('click',transcribeWithOpenAI);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
 referenceFiles.addEventListener('change',addReferenceFiles);
 createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
@@ -206,3 +236,4 @@ saveHistoryButton.addEventListener('click',saveToHistory);historySearch.addEvent
 window.addEventListener('beforeunload',event=>{if(recorder&&recorder.state!=='inactive'){event.preventDefault();event.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&recorder?.state==='recording')keepScreenAwake()});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+document.body.classList.add('mic-check-open');
