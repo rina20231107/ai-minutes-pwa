@@ -12,9 +12,12 @@ const audioPlayer=document.querySelector('#audioPlayer');
 const audioName=document.querySelector('#audioName');
 const shareButton=document.querySelector('#shareButton');
 const transcribeButton=document.querySelector('#transcribeButton');
+const apiTranscribeButton=document.querySelector('#apiTranscribeButton');
 const transcriptPanel=document.querySelector('#transcriptPanel');
 const transcriptText=document.querySelector('#transcriptText');
 const processingBox=document.querySelector('#processingBox');
+const processingTitle=document.querySelector('#processingTitle');
+const processingDetail=document.querySelector('#processingDetail');
 const copyButton=document.querySelector('#copyButton');
 const downloadTextButton=document.querySelector('#downloadTextButton');
 const createMinutesButton=document.querySelector('#createMinutesButton');
@@ -45,6 +48,7 @@ function speechRecognitionClass(){return window.SpeechRecognition||window.webkit
 function startLocalTranscription(){
   const Recognition=speechRecognitionClass();
   recognitionFinalText='';transcriptText.value='';selectedAudioFile=false;
+  processingTitle.textContent='iPhoneが音声を認識しています';processingDetail.textContent='録音と同時に文字起こししています';
   transcriptPanel.classList.remove('hidden');processingBox.classList.remove('hidden');
   if(!Recognition){processingBox.classList.add('hidden');setStatus('このSafariでは音声認識を利用できません。文字起こし欄へ手入力してください。');return}
   keepRecognizing=true;speechRecognition=new Recognition();speechRecognition.lang='ja-JP';speechRecognition.continuous=true;speechRecognition.interimResults=true;
@@ -92,6 +96,18 @@ async function shareAudio(){
   const link=document.createElement('a');link.href=currentUrl;link.download=name;link.click();setStatus('録音ファイルを保存しました');
 }
 function showTranscript(){transcriptPanel.classList.remove('hidden');transcriptPanel.scrollIntoView({behavior:'smooth',block:'start'});if(selectedAudioFile&&!transcriptText.value)setStatus('選択した音声ファイルは自動認識できません。文字起こし欄へ内容を入力してください。')}
+async function transcribeWithOpenAI(){
+  if(!currentBlob)return;
+  const endpoint=window.KOTONOHA_CONFIG?.transcribeApiUrl;
+  showTranscript();
+  if(!endpoint){setStatus('OpenAI文字起こしサーバーが設定されていません。');return}
+  const form=new FormData(),name=audioName.textContent||'recording.m4a';
+  form.append('file',new File([currentBlob],name,{type:currentBlob.type||'audio/mp4'}));form.append('language','ja');
+  apiTranscribeButton.disabled=true;processingTitle.textContent='OpenAIが音声を文字起こししています';processingDetail.textContent='完了するとiPhoneの文字起こし結果を置き換えます';processingBox.classList.remove('hidden');setStatus('OpenAIで高精度に文字起こししています');
+  try{const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'OpenAI文字起こしに失敗しました');transcriptText.value=data.text||'';recognitionFinalText=transcriptText.value;setStatus('OpenAI文字起こしが完了しました')}
+  catch(error){setStatus(error.message||'OpenAI文字起こしに失敗しました。iPhoneの結果はそのまま残っています。')}
+  finally{processingBox.classList.add('hidden');apiTranscribeButton.disabled=false}
+}
 async function copyTranscript(){if(!transcriptText.value)return;await navigator.clipboard.writeText(transcriptText.value);copyButton.textContent='コピー済み';setTimeout(()=>copyButton.textContent='コピー',1500)}
 function downloadTranscript(){if(!transcriptText.value)return;const blob=new Blob([transcriptText.value],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`文字起こし_${new Date().toISOString().slice(0,10)}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 const valueOf=id=>document.querySelector(`#${id}`).value.trim();
@@ -147,7 +163,7 @@ function renderHistory(){
 function openHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item)return;activeHistoryId=id;document.querySelector('#meetingTitle').value=item.title||'';document.querySelector('#meetingDate').value=item.date||'';document.querySelector('#meetingPlace').value=item.place||'';document.querySelector('#meetingAttendees').value=item.attendees||'';transcriptText.value=item.transcript||'';minutesText.value=item.minutes||'';transcriptPanel.classList.remove('hidden');minutesPanel.classList.remove('hidden');minutesPanel.scrollIntoView({behavior:'smooth',block:'start'});setStatus('保存済みの議事録を開きました')}
 function deleteHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item||!confirm(`「${item.title}」を端末から削除しますか？`))return;setHistory(getHistory().filter(saved=>saved.id!==id));if(activeHistoryId===id)activeHistoryId=null;renderHistory();setStatus('議事録を端末から削除しました')}
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
-transcribeButton.addEventListener('click',showTranscript);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
+transcribeButton.addEventListener('click',showTranscript);apiTranscribeButton.addEventListener('click',transcribeWithOpenAI);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
 createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
 downloadWordButton.addEventListener('click',downloadWord);
 saveHistoryButton.addEventListener('click',saveToHistory);historySearch.addEventListener('input',renderHistory);renderHistory();

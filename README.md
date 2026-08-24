@@ -1,6 +1,6 @@
 # ことのは議事録 PWA
 
-iPhoneのSafariで使えるAI議事録アプリです。録音と同時にiPhoneの音声認識で文字起こしし、必要なときだけOpenAI APIで議事録を作成します。端末内の履歴・検索とMicrosoft Word（.docx）出力にも対応しています。
+iPhoneのSafariで使えるAI議事録アプリです。録音と同時にiPhoneの音声認識で文字起こしし、必要に応じてOpenAI APIによる高精度な文字起こしを選択できます。端末内の履歴・検索とMicrosoft Word（.docx）出力にも対応しています。
 
 Google Driveへ保存する場合は、アプリの「Word保存」でiPhoneへ保存した後、Google Driveアプリから手動でアップロードしてください。
 
@@ -15,4 +15,4 @@ Google Driveへ保存する場合は、アプリの「Word保存」でiPhoneへ�
 
 ## セキュリティ
 
-OpenAI APIへ文字起こし結果を送信するのは、「AI議事録を作成」を実行した場合のみです。OpenAI APIキーはブラウザやGitHubへ埋め込みません。Safariの音声認識はSiriを有効にして利用してください。
+「OpenAIで高精度に文字起こし」を実行した場合は音声を、「AI議事録を作成」を実行した場合は文字起こし結果をOpenAI APIへ送信します。OpenAI APIキーはブラウザやGitHubへ埋め込みません。Safariの音声認識はSiriを有効にして利用してください。
