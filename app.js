@@ -21,6 +21,10 @@ const processingDetail=document.querySelector('#processingDetail');
 const copyButton=document.querySelector('#copyButton');
 const downloadTextButton=document.querySelector('#downloadTextButton');
 const createMinutesButton=document.querySelector('#createMinutesButton');
+const referenceFiles=document.querySelector('#referenceFiles');
+const referenceCount=document.querySelector('#referenceCount');
+const referenceStatus=document.querySelector('#referenceStatus');
+const referenceList=document.querySelector('#referenceList');
 const minutesPanel=document.querySelector('#minutesPanel');
 const minutesProcessing=document.querySelector('#minutesProcessing');
 const minutesText=document.querySelector('#minutesText');
@@ -34,8 +38,9 @@ const historySearch=document.querySelector('#historySearch');
 const historyList=document.querySelector('#historyList');
 const historyCount=document.querySelector('#historyCount');
 
-let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false;
+let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false,referenceDocuments=[];
 const HISTORY_KEY='kotonoha_minutes_history_v1';
+const MAX_REFERENCE_FILES=3,MAX_REFERENCE_FILE_SIZE=10*1024*1024,MAX_REFERENCE_TEXT=60000;
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
 const setStatus=(message)=>{statusText.textContent=message};
 
@@ -89,6 +94,34 @@ function finishRecording(){
 function showAudio(blob,name){if(currentUrl)URL.revokeObjectURL(currentUrl);currentBlob=blob;currentUrl=URL.createObjectURL(blob);audioPlayer.src=currentUrl;audioName.textContent=name;audioPreview.classList.remove('hidden')}
 audioFile.addEventListener('change',event=>{const file=event.target.files?.[0];if(file){selectedAudioFile=true;showAudio(file,file.name);setStatus('音声ファイルを読み込みました。文字起こし欄へ内容を入力してください。')}});
 
+function setReferenceStatus(message,isError=false){referenceStatus.textContent=message;referenceStatus.classList.toggle('is-error',isError)}
+function renderReferences(){
+  referenceCount.textContent=`${referenceDocuments.length} / ${MAX_REFERENCE_FILES}件`;referenceList.replaceChildren();
+  if(!referenceDocuments.length){setReferenceStatus('資料はまだ選択されていません。');return}
+  setReferenceStatus(`${referenceDocuments.length}件の資料をAIが参照できます。`);
+  referenceDocuments.forEach(documentData=>{const item=document.createElement('div');item.className='reference-item';const detail=document.createElement('div');const name=document.createElement('strong');name.textContent=documentData.name;const info=document.createElement('small');info.textContent=`読み取り済み · ${documentData.text.length.toLocaleString('ja-JP')}文字`;detail.append(name,info);const remove=document.createElement('button');remove.type='button';remove.className='reference-remove';remove.textContent='削除';remove.addEventListener('click',()=>{referenceDocuments=referenceDocuments.filter(item=>item.id!==documentData.id);renderReferences()});item.append(detail,remove);referenceList.append(item)})
+}
+async function extractReferenceText(file){
+  const extension=file.name.split('.').pop()?.toLowerCase();const buffer=await file.arrayBuffer();
+  if(extension==='docx'){if(!window.mammoth)throw new Error('Word読取機能を読み込めませんでした');const result=await window.mammoth.extractRawText({arrayBuffer:buffer});return result.value}
+  if(extension==='xlsx'){if(!window.XLSX)throw new Error('Excel読取機能を読み込めませんでした');const workbook=window.XLSX.read(buffer,{type:'array'});return workbook.SheetNames.map(sheetName=>`【シート: ${sheetName}】\n${window.XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName],{FS:'\t'})}`).join('\n\n')}
+  if(extension==='pdf'){if(!window.pdfjsLib)throw new Error('PDF読取機能を読み込めませんでした');window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;const pages=[];for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){const page=await pdf.getPage(pageNumber);const content=await page.getTextContent();pages.push(`【${pageNumber}ページ】\n${content.items.map(item=>item.str).join(' ')}`)}return pages.join('\n\n')}
+  throw new Error('対応形式はWord（.docx）、Excel（.xlsx）、PDFです')
+}
+async function addReferenceFiles(event){
+  const selected=Array.from(event.target.files||[]);referenceFiles.value='';
+  if(!selected.length)return;
+  if(referenceDocuments.length+selected.length>MAX_REFERENCE_FILES){setReferenceStatus(`参考資料は合計${MAX_REFERENCE_FILES}件までです。`,true);return}
+  for(const file of selected){
+    if(file.size>MAX_REFERENCE_FILE_SIZE){setReferenceStatus(`「${file.name}」は10MBを超えています。`,true);continue}
+    if(referenceDocuments.some(item=>item.name===file.name&&item.size===file.size)){setReferenceStatus(`「${file.name}」はすでに追加されています。`,true);continue}
+    setReferenceStatus(`「${file.name}」を読み取っています…`);
+    try{const text=(await extractReferenceText(file)).replace(/\u0000/g,'').trim();if(!text)throw new Error('文字を抽出できませんでした');referenceDocuments.push({id:crypto.randomUUID?.()||`${Date.now()}-${Math.random()}`,name:file.name,type:file.type,size:file.size,text:text.slice(0,MAX_REFERENCE_TEXT)})}
+    catch(error){setReferenceStatus(`「${file.name}」: ${error.message}`,true)}
+  }
+  renderReferences()
+}
+
 async function shareAudio(){
   if(!currentBlob)return;
   const name=audioName.textContent||'recording.m4a';const file=new File([currentBlob],name,{type:currentBlob.type});
@@ -103,6 +136,7 @@ async function transcribeWithOpenAI(){
   if(!endpoint){setStatus('OpenAI文字起こしサーバーが設定されていません。');return}
   const form=new FormData(),name=audioName.textContent||'recording.m4a';
   form.append('file',new File([currentBlob],name,{type:currentBlob.type||'audio/mp4'}));form.append('language','ja');
+  if(referenceDocuments.length)form.append('reference_text',referenceDocuments.map(item=>`【${item.name}】\n${item.text}`).join('\n\n').slice(0,20000));
   apiTranscribeButton.disabled=true;processingTitle.textContent='OpenAIが音声を文字起こししています';processingDetail.textContent='完了するとiPhoneの文字起こし結果を置き換えます';processingBox.classList.remove('hidden');setStatus('OpenAIで高精度に文字起こししています');
   try{const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'OpenAI文字起こしに失敗しました');transcriptText.value=data.text||'';recognitionFinalText=transcriptText.value;setStatus('OpenAI文字起こしが完了しました')}
   catch(error){setStatus(error.message||'OpenAI文字起こしに失敗しました。iPhoneの結果はそのまま残っています。')}
@@ -123,7 +157,8 @@ async function createMinutes(){
   if(!endpoint){minutesError.textContent='議事録作成サーバーが設定されていません。';minutesError.classList.remove('hidden');return}
   createMinutesButton.disabled=true;regenerateButton.disabled=true;minutesProcessing.classList.remove('hidden');setStatus('AIで議事録を作成しています');
   try{
-    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,metadata:{meeting_title:valueOf('meetingTitle'),date_time:valueOf('meetingDate'),place:valueOf('meetingPlace'),attendees:valueOf('meetingAttendees')}})});
+    const references=referenceDocuments.map(item=>({name:item.name,type:item.type,text:item.text}));
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,references,metadata:{meeting_title:valueOf('meetingTitle'),date_time:valueOf('meetingDate'),place:valueOf('meetingPlace'),attendees:valueOf('meetingAttendees')}})});
     const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'議事録の作成に失敗しました');minutesText.value=formatMinutes(data.minutes||data);setStatus('AI議事録が完成しました。内容をご確認ください。');
   }catch(error){minutesError.textContent=error.message||'議事録の作成に失敗しました。';minutesError.classList.remove('hidden');setStatus('議事録を作成できませんでした');}
   finally{minutesProcessing.classList.add('hidden');createMinutesButton.disabled=false;regenerateButton.disabled=false}
@@ -164,6 +199,7 @@ function openHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!
 function deleteHistory(id){const item=getHistory().find(saved=>saved.id===id);if(!item||!confirm(`「${item.title}」を端末から削除しますか？`))return;setHistory(getHistory().filter(saved=>saved.id!==id));if(activeHistoryId===id)activeHistoryId=null;renderHistory();setStatus('議事録を端末から削除しました')}
 recordButton.addEventListener('click',startRecording);pauseButton.addEventListener('click',pauseOrResume);stopButton.addEventListener('click',stopRecording);shareButton.addEventListener('click',shareAudio);
 transcribeButton.addEventListener('click',showTranscript);apiTranscribeButton.addEventListener('click',transcribeWithOpenAI);copyButton.addEventListener('click',copyTranscript);downloadTextButton.addEventListener('click',downloadTranscript);
+referenceFiles.addEventListener('change',addReferenceFiles);
 createMinutesButton.addEventListener('click',createMinutes);regenerateButton.addEventListener('click',createMinutes);copyMinutesButton.addEventListener('click',copyMinutes);downloadMinutesButton.addEventListener('click',downloadMinutes);
 downloadWordButton.addEventListener('click',downloadWord);
 saveHistoryButton.addEventListener('click',saveToHistory);historySearch.addEventListener('input',renderHistory);renderHistory();

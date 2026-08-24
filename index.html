@@ -68,6 +68,13 @@
         </div>
         <div class="processing hidden" id="processingBox"><span></span><div><strong id="processingTitle">iPhoneが音声を認識しています</strong><small id="processingDetail">録音と同時に文字起こししています</small></div></div>
         <textarea id="transcriptText" aria-label="文字起こし結果" placeholder="録音中の文字起こし結果がここに表示されます。内容は修正できます。"></textarea>
+        <section class="reference-panel" aria-labelledby="referenceHeading">
+          <div class="reference-heading"><div><p class="eyebrow">REFERENCE FILES</p><h4 id="referenceHeading">今回の参考資料</h4></div><span id="referenceCount">0 / 3件</span></div>
+          <p>Word・Excel・PDFを最大3件まで選べます。氏名、役職、出欠、議題などをAIが判断して参考にします。</p>
+          <label class="reference-picker"><strong>参考資料を選択</strong><small>.docx / .xlsx / .pdf（1件10MB以下）</small><input id="referenceFiles" type="file" multiple accept=".docx,.xlsx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf"></label>
+          <p class="reference-status" id="referenceStatus" role="status" aria-live="polite">資料はまだ選択されていません。</p>
+          <div class="reference-list" id="referenceList"></div>
+        </section>
         <div class="transcript-actions"><button class="outline-button" id="downloadTextButton">テキスト保存</button><button class="next-button" id="createMinutesButton">AI議事録を作成</button></div>
       </section>
       <section class="minutes-panel hidden" id="minutesPanel">
@@ -101,11 +108,14 @@
     </section>
     <section class="privacy-note">
       <span aria-hidden="true">◎</span>
-      <div><strong>大切な音声を安全に</strong><p>通常の文字起こしはiPhoneの音声認識を使います。「OpenAIで高精度に文字起こし」または「AI議事録を作成」を押したときだけ、必要なデータをOpenAI APIへ送信します。</p></div>
+      <div><strong>大切な音声と資料を安全に</strong><p>通常の文字起こしはiPhoneの音声認識を使います。「OpenAIで高精度に文字起こし」または「AI議事録を作成」を押したときだけ、必要なデータをOpenAI APIへ送信します。参考資料の原本はアプリに保存しません。</p></div>
     </section>
     <footer>ことのは議事録 · PWA Phase 6</footer>
   </main>
   <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.10.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="app.js" defer></script>
 </body>
 </html>
