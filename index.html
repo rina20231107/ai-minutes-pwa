@@ -80,6 +80,7 @@
           <button class="copy-button" id="copyButton">コピー</button>
         </div>
         <div class="processing hidden" id="processingBox"><span></span><div><strong id="processingTitle">iPhoneが音声を認識しています</strong><small id="processingDetail">録音と同時に文字起こししています</small></div></div>
+        <p class="transcription-error hidden" id="transcriptionError" role="alert"></p>
         <textarea id="transcriptText" aria-label="文字起こし結果" placeholder="録音中の文字起こし結果がここに表示されます。内容は修正できます。"></textarea>
         <section class="reference-panel" aria-labelledby="referenceHeading">
           <div class="reference-heading"><div><p class="eyebrow">REFERENCE FILES</p><h4 id="referenceHeading">今回の参考資料</h4></div><span id="referenceCount">0 / 3件</span></div>
@@ -87,6 +88,8 @@
           <label class="reference-picker"><strong>参考資料を選択</strong><small>.docx / .xlsx / .pdf（1件10MB以下）</small><input id="referenceFiles" type="file" multiple accept=".docx,.xlsx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf"></label>
           <p class="reference-status" id="referenceStatus" role="status" aria-live="polite">資料はまだ選択されていません。</p>
           <div class="reference-list" id="referenceList"></div>
+          <label class="reference-text-label">AIに渡す参考資料テキスト<textarea id="referenceText" aria-label="AIに渡す参考資料テキスト" placeholder="ファイルから抽出した文字がここに表示されます。内容を確認・修正したり、参考情報を直接貼り付けたりできます。"></textarea></label>
+          <small class="reference-help">このテキストと文字起こし結果の両方をAIへ送り、統合して議事録を作成します。</small>
         </section>
         <div class="transcript-actions"><button class="outline-button" id="downloadTextButton">テキスト保存</button><button class="next-button" id="createMinutesButton">AI議事録を作成</button></div>
       </section>
