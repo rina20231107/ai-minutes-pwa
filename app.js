@@ -18,6 +18,7 @@ const transcriptText=document.querySelector('#transcriptText');
 const processingBox=document.querySelector('#processingBox');
 const processingTitle=document.querySelector('#processingTitle');
 const processingDetail=document.querySelector('#processingDetail');
+const transcriptionError=document.querySelector('#transcriptionError');
 const copyButton=document.querySelector('#copyButton');
 const downloadTextButton=document.querySelector('#downloadTextButton');
 const createMinutesButton=document.querySelector('#createMinutesButton');
@@ -25,6 +26,7 @@ const referenceFiles=document.querySelector('#referenceFiles');
 const referenceCount=document.querySelector('#referenceCount');
 const referenceStatus=document.querySelector('#referenceStatus');
 const referenceList=document.querySelector('#referenceList');
+const referenceText=document.querySelector('#referenceText');
 const minutesPanel=document.querySelector('#minutesPanel');
 const minutesProcessing=document.querySelector('#minutesProcessing');
 const minutesText=document.querySelector('#minutesText');
@@ -46,9 +48,10 @@ const useInternalMicButton=document.querySelector('#useInternalMicButton');
 const inputDevice=document.querySelector('#inputDevice');
 const inputDeviceName=document.querySelector('#inputDeviceName');
 
-let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false,referenceDocuments=[];
+let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false,referenceDocuments=[],recordingSegments=[],recordingActive=false,isRotatingSegment=false,segmentTimeout=null,segmentMime='audio/mp4';
 const HISTORY_KEY='kotonoha_minutes_history_v1';
 const MAX_REFERENCE_FILES=3,MAX_REFERENCE_FILE_SIZE=10*1024*1024,MAX_REFERENCE_TEXT=60000;
+const MAX_TRANSCRIPTION_BYTES=25*1024*1024,SEGMENT_DURATION_MS=10*60*1000;
 const formatTime=(value)=>`${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
 const setStatus=(message)=>{statusText.textContent=message};
 const bluetoothNamePattern=/powerconf|anker|bluetooth|airpods|headset|hands[- ]?free|イヤホン|ヘッドセット/i;
@@ -97,39 +100,45 @@ async function startRecording(){
   try{
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
     const activeTrack=stream.getAudioTracks()[0];const activeDevices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]);const activeName=reportedMicName(activeTrack,activeDevices);inputDeviceName.textContent=activeName||'iPhoneが選択した音声入力';inputDevice.classList.toggle('is-bluetooth',bluetoothNamePattern.test(activeName));
-    const preferred=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(type=>MediaRecorder.isTypeSupported(type));
-    recorder=new MediaRecorder(stream,preferred?{mimeType:preferred}:undefined);
-    chunks=[];elapsed=0;timer.textContent='00:00';isPaused=false;
-    recorder.addEventListener('dataavailable',event=>{if(event.data.size)chunks.push(event.data)});
-    recorder.addEventListener('stop',finishRecording,{once:true});
-    recorder.start(1000);startLocalTranscription();card.classList.add('is-recording');idleControls.classList.add('hidden');activeControls.classList.remove('hidden');
+    segmentMime=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(type=>MediaRecorder.isTypeSupported(type))||'';
+    recordingSegments=[];recordingActive=true;isRotatingSegment=false;elapsed=0;timer.textContent='00:00';isPaused=false;selectedAudioFile=false;transcriptionError.classList.add('hidden');
+    startRecorderSegment();startLocalTranscription();card.classList.add('is-recording');idleControls.classList.add('hidden');activeControls.classList.remove('hidden');
     pauseButton.textContent='一時停止';setStatus('録音とiPhone音声認識による文字起こしを実行中です。');startClock();keepScreenAwake();
   }catch(error){setStatus(error?.name==='NotAllowedError'?'マイクが許可されていません。Safariのサイト設定でマイクを許可してください。':'録音を開始できませんでした。もう一度お試しください。')}
 }
 
-function pauseOrResume(){
-  if(!recorder)return;
-  if(recorder.state==='recording'){recorder.pause();keepRecognizing=false;try{speechRecognition?.stop()}catch{}processingBox.classList.add('hidden');isPaused=true;card.classList.remove('is-recording');pauseButton.textContent='再開';setStatus('録音と文字起こしを一時停止しています')}
-  else if(recorder.state==='paused'){recorder.resume();keepRecognizing=true;try{speechRecognition?.start();processingBox.classList.remove('hidden')}catch{}isPaused=false;card.classList.add('is-recording');pauseButton.textContent='一時停止';setStatus('録音と文字起こしを再開しました。')}
+function scheduleSegmentRotation(){clearTimeout(segmentTimeout);segmentTimeout=setTimeout(()=>{if(recordingActive&&recorder?.state==='recording'){isRotatingSegment=true;recorder.stop()}},SEGMENT_DURATION_MS)}
+function startRecorderSegment(){
+  chunks=[];recorder=new MediaRecorder(stream,segmentMime?{mimeType:segmentMime}:undefined);
+  recorder.addEventListener('dataavailable',event=>{if(event.data.size)chunks.push(event.data)});
+  recorder.addEventListener('stop',()=>{const mime=recorder?.mimeType||segmentMime||'audio/mp4';const blob=new Blob(chunks,{type:mime});if(blob.size)recordingSegments.push(blob);if(recordingActive&&isRotatingSegment){isRotatingSegment=false;startRecorderSegment();setStatus(`録音中です（長時間録音を${recordingSegments.length+1}区間に分割中）`)}else finishRecording()},{once:true});
+  recorder.start(1000);scheduleSegmentRotation();
 }
 
-function stopRecording(){stopLocalTranscription();if(recorder&&recorder.state!=='inactive')recorder.stop();stream?.getTracks().forEach(track=>track.stop());stopClock();releaseWakeLock()}
+function pauseOrResume(){
+  if(!recorder)return;
+  if(recorder.state==='recording'){clearTimeout(segmentTimeout);recorder.pause();keepRecognizing=false;try{speechRecognition?.stop()}catch{}processingBox.classList.add('hidden');isPaused=true;card.classList.remove('is-recording');pauseButton.textContent='再開';setStatus('録音と文字起こしを一時停止しています')}
+  else if(recorder.state==='paused'){recorder.resume();scheduleSegmentRotation();keepRecognizing=true;try{speechRecognition?.start();processingBox.classList.remove('hidden')}catch{}isPaused=false;card.classList.add('is-recording');pauseButton.textContent='一時停止';setStatus('録音と文字起こしを再開しました。')}
+}
+
+function stopRecording(){recordingActive=false;isRotatingSegment=false;clearTimeout(segmentTimeout);stopLocalTranscription();if(recorder&&recorder.state!=='inactive')recorder.stop();else finishRecording();stopClock();releaseWakeLock()}
 function finishRecording(){
-  const mime=recorder?.mimeType||'audio/mp4';currentBlob=new Blob(chunks,{type:mime});
+  stream?.getTracks().forEach(track=>track.stop());const mime=recordingSegments[0]?.type||segmentMime||'audio/mp4';currentBlob=recordingSegments.length===1?recordingSegments[0]:new Blob(recordingSegments,{type:mime});
   const extension=mime.includes('mp4')?'m4a':mime.includes('webm')?'webm':'audio';
-  showAudio(currentBlob,`ことのは録音_${new Date().toISOString().slice(0,19).replaceAll(':','-')}.${extension}`);
-  card.classList.remove('is-recording');activeControls.classList.add('hidden');idleControls.classList.remove('hidden');setStatus('録音が完了しました');
+  const name=`ことのは録音_${new Date().toISOString().slice(0,19).replaceAll(':','-')}.${extension}`;if(currentUrl)URL.revokeObjectURL(currentUrl);currentUrl=URL.createObjectURL(recordingSegments[0]||currentBlob);audioPlayer.src=currentUrl;audioName.textContent=recordingSegments.length>1?`${name}（${recordingSegments.length}区間・再生は先頭区間）`:name;audioPreview.classList.remove('hidden');
+  card.classList.remove('is-recording');activeControls.classList.add('hidden');idleControls.classList.remove('hidden');setStatus(recordingSegments.length>1?`録音が完了しました。OpenAI文字起こしは${recordingSegments.length}区間を順番に処理します。`:'録音が完了しました');
 }
 function showAudio(blob,name){if(currentUrl)URL.revokeObjectURL(currentUrl);currentBlob=blob;currentUrl=URL.createObjectURL(blob);audioPlayer.src=currentUrl;audioName.textContent=name;audioPreview.classList.remove('hidden')}
-audioFile.addEventListener('change',event=>{const file=event.target.files?.[0];if(file){selectedAudioFile=true;showAudio(file,file.name);setStatus('音声ファイルを読み込みました。文字起こし欄へ内容を入力してください。')}});
+audioFile.addEventListener('change',event=>{const file=event.target.files?.[0];if(file){selectedAudioFile=true;recordingSegments=[];showAudio(file,file.name);setStatus('音声ファイルを読み込みました。')}});
 
 function setReferenceStatus(message,isError=false){referenceStatus.textContent=message;referenceStatus.classList.toggle('is-error',isError)}
 function renderReferences(){
   referenceCount.textContent=`${referenceDocuments.length} / ${MAX_REFERENCE_FILES}件`;referenceList.replaceChildren();
   if(!referenceDocuments.length){setReferenceStatus('資料はまだ選択されていません。');return}
   setReferenceStatus(`${referenceDocuments.length}件の資料をAIが参照できます。`);
-  referenceDocuments.forEach(documentData=>{const item=document.createElement('div');item.className='reference-item';const detail=document.createElement('div');const name=document.createElement('strong');name.textContent=documentData.name;const info=document.createElement('small');info.textContent=`読み取り済み · ${documentData.text.length.toLocaleString('ja-JP')}文字`;detail.append(name,info);const remove=document.createElement('button');remove.type='button';remove.className='reference-remove';remove.textContent='削除';remove.addEventListener('click',()=>{referenceDocuments=referenceDocuments.filter(item=>item.id!==documentData.id);renderReferences()});item.append(detail,remove);referenceList.append(item)})
+  referenceDocuments.forEach(documentData=>{const item=document.createElement('div');item.className='reference-item';const detail=document.createElement('div');const name=document.createElement('strong');name.textContent=documentData.name;const info=document.createElement('small');info.textContent=`読み取り済み · ${documentData.text.length.toLocaleString('ja-JP')}文字`;detail.append(name,info);const remove=document.createElement('button');remove.type='button';remove.className='reference-remove';remove.textContent='削除';remove.addEventListener('click',()=>{referenceDocuments=referenceDocuments.filter(item=>item.id!==documentData.id);syncReferenceText();renderReferences()});item.append(detail,remove);referenceList.append(item)})
 }
+function syncReferenceText(){referenceText.value=referenceDocuments.map(item=>`【${item.name}】\n${item.text}`).join('\n\n')}
 async function extractReferenceText(file){
   const extension=file.name.split('.').pop()?.toLowerCase();const buffer=await file.arrayBuffer();
   if(extension==='docx'){if(!window.mammoth)throw new Error('Word読取機能を読み込めませんでした');const result=await window.mammoth.extractRawText({arrayBuffer:buffer});return result.value}
@@ -148,14 +157,14 @@ async function addReferenceFiles(event){
     try{const text=(await extractReferenceText(file)).replace(/\u0000/g,'').trim();if(!text)throw new Error('文字を抽出できませんでした');referenceDocuments.push({id:crypto.randomUUID?.()||`${Date.now()}-${Math.random()}`,name:file.name,type:file.type,size:file.size,text:text.slice(0,MAX_REFERENCE_TEXT)})}
     catch(error){setReferenceStatus(`「${file.name}」: ${error.message}`,true)}
   }
-  renderReferences()
+  syncReferenceText();renderReferences()
 }
 
 async function shareAudio(){
   if(!currentBlob)return;
-  const name=audioName.textContent||'recording.m4a';const file=new File([currentBlob],name,{type:currentBlob.type});
-  try{if(navigator.canShare?.({files:[file]})){await navigator.share({title:'ことのは議事録の録音',files:[file]});return}}catch(error){if(error?.name==='AbortError')return}
-  const link=document.createElement('a');link.href=currentUrl;link.download=name;link.click();setStatus('録音ファイルを保存しました');
+  const base=(audioName.textContent||'recording.m4a').replace(/（.*$/,'');const extension=base.split('.').pop()||'m4a';const parts=recordingSegments.length?recordingSegments:[currentBlob];const files=parts.map((blob,index)=>new File([blob],parts.length>1?base.replace(`.${extension}`,`_${String(index+1).padStart(2,'0')}.${extension}`):base,{type:blob.type}));
+  try{if(navigator.canShare?.({files})){await navigator.share({title:'ことのは議事録の録音',files});return}}catch(error){if(error?.name==='AbortError')return}
+  files.forEach(file=>{const url=URL.createObjectURL(file);const link=document.createElement('a');link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1500)});setStatus('録音ファイルを保存しました');
 }
 function showTranscript(){transcriptPanel.classList.remove('hidden');transcriptPanel.scrollIntoView({behavior:'smooth',block:'start'});if(selectedAudioFile&&!transcriptText.value)setStatus('選択した音声ファイルは自動認識できません。文字起こし欄へ内容を入力してください。')}
 async function transcribeWithOpenAI(){
@@ -163,12 +172,11 @@ async function transcribeWithOpenAI(){
   const endpoint=window.KOTONOHA_CONFIG?.transcribeApiUrl;
   showTranscript();
   if(!endpoint){setStatus('OpenAI文字起こしサーバーが設定されていません。');return}
-  const form=new FormData(),name=audioName.textContent||'recording.m4a';
-  form.append('file',new File([currentBlob],name,{type:currentBlob.type||'audio/mp4'}));form.append('language','ja');
-  if(referenceDocuments.length)form.append('reference_text',referenceDocuments.map(item=>`【${item.name}】\n${item.text}`).join('\n\n').slice(0,20000));
+  const parts=recordingSegments.length?recordingSegments:[currentBlob];const oversized=parts.find(part=>part.size>MAX_TRANSCRIPTION_BYTES);transcriptionError.classList.add('hidden');
+  if(oversized){transcriptionError.textContent=`音声ファイルがOpenAIの25MB上限を超えています（${(oversized.size/1024/1024).toFixed(1)}MB）。この版で新しく録音すると10分ごとに自動分割されます。現在のiPhone文字起こしは保持されています。`;transcriptionError.classList.remove('hidden');setStatus('OpenAI文字起こしを開始できませんでした');return}
   apiTranscribeButton.disabled=true;processingTitle.textContent='OpenAIが音声を文字起こししています';processingDetail.textContent='完了するとiPhoneの文字起こし結果を置き換えます';processingBox.classList.remove('hidden');setStatus('OpenAIで高精度に文字起こししています');
-  try{const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'OpenAI文字起こしに失敗しました');transcriptText.value=data.text||'';recognitionFinalText=transcriptText.value;setStatus('OpenAI文字起こしが完了しました')}
-  catch(error){setStatus(error.message||'OpenAI文字起こしに失敗しました。iPhoneの結果はそのまま残っています。')}
+  try{const results=[];for(let index=0;index<parts.length;index++){processingDetail.textContent=`${index+1} / ${parts.length}区間を処理中です。画面を閉じずにお待ちください。`;const form=new FormData(),name=`recording_${index+1}.${parts[index].type.includes('webm')?'webm':'m4a'}`;form.append('file',new File([parts[index]],name,{type:parts[index].type||'audio/mp4'}));form.append('language','ja');const context=referenceText.value.trim();if(context)form.append('reference_text',context.slice(0,20000));const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`${index+1}区間目: ${data.error||'OpenAI文字起こしに失敗しました'}`);results.push(data.text||'')}const completed=results.filter(Boolean).join('\n\n');if(!completed)throw new Error('文字起こし結果が空でした');transcriptText.value=completed;recognitionFinalText=completed;setStatus(`OpenAI文字起こしが完了しました（${parts.length}区間）`)}
+  catch(error){transcriptionError.textContent=`OpenAI文字起こしに失敗しました：${error.message||'不明なエラー'}。iPhoneの文字起こし結果は変更していません。`;transcriptionError.classList.remove('hidden');setStatus('OpenAI文字起こしに失敗しました')}
   finally{processingBox.classList.add('hidden');apiTranscribeButton.disabled=false}
 }
 async function copyTranscript(){if(!transcriptText.value)return;await navigator.clipboard.writeText(transcriptText.value);copyButton.textContent='コピー済み';setTimeout(()=>copyButton.textContent='コピー',1500)}
@@ -186,7 +194,7 @@ async function createMinutes(){
   if(!endpoint){minutesError.textContent='議事録作成サーバーが設定されていません。';minutesError.classList.remove('hidden');return}
   createMinutesButton.disabled=true;regenerateButton.disabled=true;minutesProcessing.classList.remove('hidden');setStatus('AIで議事録を作成しています');
   try{
-    const references=referenceDocuments.map(item=>({name:item.name,type:item.type,text:item.text}));
+    const context=referenceText.value.trim();const references=context?[{name:'確認・編集済み参考資料テキスト',type:'text/plain',text:context.slice(0,120000)}]:[];
     const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript,references,metadata:{meeting_title:valueOf('meetingTitle'),date_time:valueOf('meetingDate'),place:valueOf('meetingPlace'),attendees:valueOf('meetingAttendees')}})});
     const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'議事録の作成に失敗しました');minutesText.value=formatMinutes(data.minutes||data);setStatus('AI議事録が完成しました。内容をご確認ください。');
   }catch(error){minutesError.textContent=error.message||'議事録の作成に失敗しました。';minutesError.classList.remove('hidden');setStatus('議事録を作成できませんでした');}
