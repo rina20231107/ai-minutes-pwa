@@ -1,4 +1,4 @@
-const CACHE='kotonoha-phase6-v8';
+const CACHE='kotonoha-phase6-v9';
 const ASSETS=['./','./index.html','./styles.css','./phase2.css','./config.js','./app.js','./manifest.webmanifest','./icons/icon.svg','./vendor/mp4box.all.js','./vendor/mp4box-LICENSE.txt'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));

@@ -186,7 +186,7 @@ async function splitExternalMp4(blob){
       const safeSeconds=Math.max(60,Math.min(600,Math.floor((20*1024*1024*8)/bitrate)));
       const samplesPerSecond=track.nb_samples/durationSeconds;
       mp4.setSegmentOptions(track.id,null,{nbSamples:Math.max(1,Math.floor(samplesPerSecond*safeSeconds)),rapAlignement:false,normalizeAudioSampleEntriesForMSE:true});
-      const initialized=mp4.initializeSegmentation();initBuffer=initialized?.[0]?.buffer;
+      const initialized=mp4.initializeSegmentation();initBuffer=initialized?.buffer||initialized?.[0]?.buffer;
       if(!initBuffer){fail('音声の分割準備に失敗しました');return}
       mp4.start();
     };
