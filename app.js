@@ -48,7 +48,7 @@ const useInternalMicButton=document.querySelector('#useInternalMicButton');
 const inputDevice=document.querySelector('#inputDevice');
 const inputDeviceName=document.querySelector('#inputDeviceName');
 
-let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false,referenceDocuments=[],recordingSegments=[],recordingActive=false,isRotatingSegment=false,segmentTimeout=null,segmentMime='audio/mp4';
+let recorder=null,stream=null,chunks=[],elapsed=0,timerId=null,currentBlob=null,currentUrl=null,isPaused=false,wakeLock=null,activeHistoryId=null,speechRecognition=null,recognitionFinalText='',keepRecognizing=false,selectedAudioFile=false,referenceDocuments=[],recordingSegments=[],externalTranscriptionParts=[],recordingActive=false,isRotatingSegment=false,segmentTimeout=null,segmentMime='audio/mp4';
 const HISTORY_KEY='kotonoha_minutes_history_v1';
 const MAX_REFERENCE_FILES=3,MAX_REFERENCE_FILE_SIZE=10*1024*1024,MAX_REFERENCE_TEXT=60000;
 const MAX_TRANSCRIPTION_BYTES=25*1024*1024,SEGMENT_DURATION_MS=10*60*1000;
@@ -101,7 +101,7 @@ async function startRecording(){
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
     const activeTrack=stream.getAudioTracks()[0];const activeDevices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]);const activeName=reportedMicName(activeTrack,activeDevices);inputDeviceName.textContent=activeName||'iPhoneが選択した音声入力';inputDevice.classList.toggle('is-bluetooth',bluetoothNamePattern.test(activeName));
     segmentMime=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(type=>MediaRecorder.isTypeSupported(type))||'';
-    recordingSegments=[];recordingActive=true;isRotatingSegment=false;elapsed=0;timer.textContent='00:00';isPaused=false;selectedAudioFile=false;transcriptionError.classList.add('hidden');
+    recordingSegments=[];externalTranscriptionParts=[];recordingActive=true;isRotatingSegment=false;elapsed=0;timer.textContent='00:00';isPaused=false;selectedAudioFile=false;transcriptionError.classList.add('hidden');
     startRecorderSegment();startLocalTranscription();card.classList.add('is-recording');idleControls.classList.add('hidden');activeControls.classList.remove('hidden');
     pauseButton.textContent='一時停止';setStatus('録音とiPhone音声認識による文字起こしを実行中です。');startClock();keepScreenAwake();
   }catch(error){setStatus(error?.name==='NotAllowedError'?'マイクが許可されていません。Safariのサイト設定でマイクを許可してください。':'録音を開始できませんでした。もう一度お試しください。')}
@@ -129,7 +129,7 @@ function finishRecording(){
   card.classList.remove('is-recording');activeControls.classList.add('hidden');idleControls.classList.remove('hidden');setStatus(recordingSegments.length>1?`録音が完了しました。OpenAI文字起こしは${recordingSegments.length}区間を順番に処理します。`:'録音が完了しました');
 }
 function showAudio(blob,name){if(currentUrl)URL.revokeObjectURL(currentUrl);currentBlob=blob;currentUrl=URL.createObjectURL(blob);audioPlayer.src=currentUrl;audioName.textContent=name;audioPreview.classList.remove('hidden')}
-audioFile.addEventListener('change',event=>{const file=event.target.files?.[0];if(file){selectedAudioFile=true;recordingSegments=[];showAudio(file,file.name);setStatus('音声ファイルを読み込みました。')}});
+audioFile.addEventListener('change',event=>{const file=event.target.files?.[0];if(file){selectedAudioFile=true;recordingSegments=[];externalTranscriptionParts=[];showAudio(file,file.name);setStatus(file.size>MAX_TRANSCRIPTION_BYTES?'音声ファイルを読み込みました。OpenAI文字起こし時に自動分割します。':'音声ファイルを読み込みました。')}});
 
 function setReferenceStatus(message,isError=false){referenceStatus.textContent=message;referenceStatus.classList.toggle('is-error',isError)}
 function renderReferences(){
@@ -167,15 +167,48 @@ async function shareAudio(){
   files.forEach(file=>{const url=URL.createObjectURL(file);const link=document.createElement('a');link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1500)});setStatus('録音ファイルを保存しました');
 }
 function showTranscript(){transcriptPanel.classList.remove('hidden');transcriptPanel.scrollIntoView({behavior:'smooth',block:'start'});if(selectedAudioFile&&!transcriptText.value)setStatus('選択した音声ファイルは自動認識できません。文字起こし欄へ内容を入力してください。')}
+async function splitExternalMp4(blob){
+  const name=(audioName.textContent||'').toLowerCase();
+  if(!/\.(m4a|mp4)$/.test(name))throw new Error('25MBを超える外部音声の自動分割は、現在M4A（.m4a）またはMP4（.mp4）に対応しています。');
+  processingTitle.textContent='ボイスメモを分割しています';processingDetail.textContent='音声を壊さずに約10分ごとの区間へ分けています。';
+  const {createFile}=await import('./vendor/mp4box.all.js');
+  const source=await blob.arrayBuffer();source.fileStart=0;
+  return new Promise((resolve,reject)=>{
+    const mp4=createFile();let initBuffer=null;const parts=[];let settled=false;
+    const fail=message=>{if(!settled){settled=true;reject(new Error(message))}};
+    mp4.onError=error=>fail(`M4Aを解析できませんでした（${String(error)}）`);
+    mp4.onSegment=(id,user,buffer,sampleNumber,last)=>{parts.push(new Blob([initBuffer.slice(0),buffer],{type:'audio/mp4'}));if(last&&!settled){settled=true;resolve(parts)}};
+    mp4.onReady=info=>{
+      const track=(info.audioTracks||[])[0]||info.tracks.find(item=>item.audio);
+      if(!track){fail('音声トラックが見つかりませんでした');return}
+      const durationSeconds=track.duration/track.timescale;
+      const bitrate=track.bitrate||Math.max(1,blob.size*8/durationSeconds);
+      const safeSeconds=Math.max(60,Math.min(600,Math.floor((20*1024*1024*8)/bitrate)));
+      const samplesPerSecond=track.nb_samples/durationSeconds;
+      mp4.setSegmentOptions(track.id,null,{nbSamples:Math.max(1,Math.floor(samplesPerSecond*safeSeconds)),rapAlignement:false,normalizeAudioSampleEntriesForMSE:true});
+      const initialized=mp4.initializeSegmentation();initBuffer=initialized?.[0]?.buffer;
+      if(!initBuffer){fail('音声の分割準備に失敗しました');return}
+      mp4.start();
+    };
+    try{mp4.appendBuffer(source);mp4.flush()}catch(error){fail(error.message||'M4Aの分割に失敗しました')}
+  });
+}
+async function prepareTranscriptionParts(){
+  if(recordingSegments.length)return recordingSegments;
+  if(currentBlob.size<=MAX_TRANSCRIPTION_BYTES)return[currentBlob];
+  if(!selectedAudioFile)throw new Error('音声ファイルが25MBを超えています。');
+  if(!externalTranscriptionParts.length)externalTranscriptionParts=await splitExternalMp4(currentBlob);
+  const oversized=externalTranscriptionParts.find(part=>part.size>MAX_TRANSCRIPTION_BYTES);
+  if(oversized)throw new Error('分割後も25MBを超える区間がありました。音声を短くしてお試しください。');
+  return externalTranscriptionParts;
+}
 async function transcribeWithOpenAI(){
   if(!currentBlob)return;
   const endpoint=window.KOTONOHA_CONFIG?.transcribeApiUrl;
   showTranscript();
   if(!endpoint){setStatus('OpenAI文字起こしサーバーが設定されていません。');return}
-  const parts=recordingSegments.length?recordingSegments:[currentBlob];const oversized=parts.find(part=>part.size>MAX_TRANSCRIPTION_BYTES);transcriptionError.classList.add('hidden');
-  if(oversized){transcriptionError.textContent=`音声ファイルがOpenAIの25MB上限を超えています（${(oversized.size/1024/1024).toFixed(1)}MB）。この版で新しく録音すると10分ごとに自動分割されます。現在のiPhone文字起こしは保持されています。`;transcriptionError.classList.remove('hidden');setStatus('OpenAI文字起こしを開始できませんでした');return}
-  apiTranscribeButton.disabled=true;processingTitle.textContent='OpenAIが音声を文字起こししています';processingDetail.textContent='完了するとiPhoneの文字起こし結果を置き換えます';processingBox.classList.remove('hidden');setStatus('OpenAIで高精度に文字起こししています');
-  try{const results=[];for(let index=0;index<parts.length;index++){processingDetail.textContent=`${index+1} / ${parts.length}区間を処理中です。画面を閉じずにお待ちください。`;const form=new FormData(),name=`recording_${index+1}.${parts[index].type.includes('webm')?'webm':'m4a'}`;form.append('file',new File([parts[index]],name,{type:parts[index].type||'audio/mp4'}));form.append('language','ja');const context=referenceText.value.trim();if(context)form.append('reference_text',context.slice(0,20000));const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`${index+1}区間目: ${data.error||'OpenAI文字起こしに失敗しました'}`);results.push(data.text||'')}const completed=results.filter(Boolean).join('\n\n');if(!completed)throw new Error('文字起こし結果が空でした');transcriptText.value=completed;recognitionFinalText=completed;setStatus(`OpenAI文字起こしが完了しました（${parts.length}区間）`)}
+  transcriptionError.classList.add('hidden');apiTranscribeButton.disabled=true;processingBox.classList.remove('hidden');setStatus('OpenAIで高精度に文字起こししています');
+  try{const parts=await prepareTranscriptionParts();processingTitle.textContent='OpenAIが音声を文字起こししています';const results=[];for(let index=0;index<parts.length;index++){processingDetail.textContent=`${index+1} / ${parts.length}区間を処理中です。画面を閉じずにお待ちください。`;const form=new FormData(),name=`recording_${index+1}.${parts[index].type.includes('webm')?'webm':'m4a'}`;form.append('file',new File([parts[index]],name,{type:parts[index].type||'audio/mp4'}));form.append('language','ja');const context=referenceText.value.trim();if(context)form.append('reference_text',context.slice(0,20000));const response=await fetch(endpoint,{method:'POST',body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`${index+1}区間目: ${data.error||'OpenAI文字起こしに失敗しました'}`);results.push(data.text||'')}const completed=results.filter(Boolean).join('\n\n');if(!completed)throw new Error('文字起こし結果が空でした');transcriptText.value=completed;recognitionFinalText=completed;setStatus(`OpenAI文字起こしが完了しました（${parts.length}区間）`)}
   catch(error){transcriptionError.textContent=`OpenAI文字起こしに失敗しました：${error.message||'不明なエラー'}。iPhoneの文字起こし結果は変更していません。`;transcriptionError.classList.remove('hidden');setStatus('OpenAI文字起こしに失敗しました')}
   finally{processingBox.classList.add('hidden');apiTranscribeButton.disabled=false}
 }
